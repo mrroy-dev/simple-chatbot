@@ -1,0 +1,61 @@
+model:
+  vocab_size: 8000
+  block_size: 512
+  n_layer: 6
+  n_head: 8
+  n_kv_head: 4
+  n_embd: 384
+  dropout: 0.1
+  attn_dropout: 0.0
+  resid_dropout: 0.0
+  embd_dropout: 0.1
+  bias: false
+  rope_base: 10000
+  gradient_checkpointing: false
+  weight_tying: true
+  init_std: 0.02
+  norm_eps: 1.0e-5
+  mlp_ratio: 4
+  activation: swiglu
+
+train:
+  batch_size: 32
+  epochs: 10
+  gradient_accumulation_steps: 1
+  gradient_clip: 1.0
+  mixed_precision: bf16
+  compile: false
+  log_every: 10
+  val_every: 100
+  val_split: 0.05
+  num_workers: 2
+  pin_memory: true
+  seed: 42
+  early_stop_patience: null
+  ema_decay: null
+  optimizer:
+    name: adamw
+    lr: 0.0003
+    weight_decay: 0.1
+    beta1: 0.9
+    beta2: 0.95
+    eps: 1.0e-8
+    fused: true
+  scheduler:
+    name: cosine
+    warmup_steps: 100
+    min_lr: 1.0e-5
+  checkpoint:
+    save_dir: checkpoints
+    save_every_steps: 1000
+    save_every_epochs: 1
+    keep_last_n: 3
+    save_best: true
+    best_metric: val_loss
+
+data:
+  train_path: data/pairs_train.json
+  val_path: data/pairs_val.json
+  max_seq_length: 512
+  dataset_format: pairs
+  streaming: false

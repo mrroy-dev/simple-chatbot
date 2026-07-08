@@ -1,0 +1,21 @@
+# Model architecture configuration
+# Overrides default.yaml model section when specified
+
+vocab_size: 8000
+block_size: 512
+n_layer: 6
+n_head: 8
+n_kv_head: 4
+n_embd: 384
+dropout: 0.1
+attn_dropout: 0.0
+resid_dropout: 0.0
+embd_dropout: 0.1
+bias: false
+rope_base: 10000
+gradient_checkpointing: false
+weight_tying: true
+init_std: 0.02
+norm_eps: 1.0e-5
+mlp_ratio: 4
+activation: swiglu

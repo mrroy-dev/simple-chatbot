@@ -1,0 +1,14 @@
+# Training configuration
+# Overrides default.yaml train section when specified
+
+batch_size: 32
+epochs: 10
+gradient_accumulation_steps: 1
+gradient_clip: 1.0
+mixed_precision: bf16
+compile: false
+log_every: 10
+val_every: 100
+val_split: 0.05
+num_workers: 2
+seed: 42

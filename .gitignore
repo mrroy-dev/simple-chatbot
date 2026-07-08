@@ -1,0 +1,5 @@
+/.codeatlas
+/.pytest_cache
+/.venv
+/data
+/tests
