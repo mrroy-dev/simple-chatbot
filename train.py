@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--compile", action="store_true", help="Use torch.compile")
     parser.add_argument("--no-compile", action="store_false", dest="compile")
     parser.add_argument("--seed", type=int, help="Random seed")
+    parser.add_argument("--max-steps", type=int, help="Max training steps")
     parser.add_argument("--preprocess-only", action="store_true", help="Only preprocess data, don't train")
     args = parser.parse_args()
 
@@ -58,6 +59,7 @@ def main():
                 "model.n_embd": args.n_embd,
                 "train.compile": args.compile,
                 "train.seed": args.seed,
+                "train.max_steps": args.max_steps,
             }.items() if v is not None
         },
     )

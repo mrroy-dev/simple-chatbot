@@ -3,3 +3,25 @@
 /.venv
 /data
 /tests
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+
+# Checkpoints
+checkpoints/
+*.pt
+*.pth
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+*.log
