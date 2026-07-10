@@ -41,6 +41,9 @@ class BPETokenizer(BaseTokenizer):
         num_merges = max_vocab_size - len(vocab)
         merges = {}
 
+        def _bytes_to_str(b: bytes) -> str:
+            return "".join(self.byte_encoder[x] for x in b)
+
         for i in range(num_merges):
             pair_counts = defaultdict(int)
             for word, freq in token_freqs.items():
@@ -57,15 +60,11 @@ class BPETokenizer(BaseTokenizer):
             merges[most_common] = len(vocab)
             new_id = len(vocab)
 
-            new_token = (
-                vocab[most_common[0]] + vocab[most_common[1]]
-                if isinstance(vocab.get(most_common[0]), bytes)
-                else str(most_common[0]) + str(most_common[1])
-            )
-            if isinstance(vocab.get(most_common[0]), bytes):
-                vocab[new_id] = vocab[most_common[0]] + vocab[most_common[1]]
-            else:
-                vocab[new_id] = new_token
+            left = vocab[most_common[0]]
+            right = vocab[most_common[1]]
+            left_str = _bytes_to_str(left) if isinstance(left, bytes) else left
+            right_str = _bytes_to_str(right) if isinstance(right, bytes) else right
+            vocab[new_id] = left_str + right_str
 
             for word in list(tokens.keys()):
                 token_list = tokens[word]
@@ -83,7 +82,7 @@ class BPETokenizer(BaseTokenizer):
         self.vocab = {}
         for token_id, token_bytes in vocab.items():
             if isinstance(token_bytes, bytes):
-                self.vocab[token_bytes.decode("utf-8", errors="replace")] = token_id
+                self.vocab[_bytes_to_str(token_bytes)] = token_id
             else:
                 self.vocab[token_bytes] = token_id
         self.inv_vocab = {v: k for k, v in self.vocab.items()}
@@ -108,10 +107,9 @@ class BPETokenizer(BaseTokenizer):
                 if min_pair is None:
                     break
                 a, b = min_pair
-                chars = _replace_pair(chars, a, b, self.vocab.get(
-                    self.inv_vocab.get(a, "") + self.inv_vocab.get(b, ""),
-                    len(self.merges) + 256 + a,
-                ))
+                merged_str = self.inv_vocab.get(a, self.byte_encoder.get(a, "")) + self.inv_vocab.get(b, self.byte_encoder.get(b, ""))
+                merged_id = self.vocab.get(merged_str, a)
+                chars = _replace_pair(chars, a, b, merged_id)
             ids.extend(chars)
         return ids
 
@@ -123,14 +121,19 @@ class BPETokenizer(BaseTokenizer):
     def decode(self, ids: List[int], skip_special: bool = True) -> str:
         tokens = []
         for i in ids:
-            token = self.inv_vocab.get(i, "<unk>")
+            token = self.inv_vocab.get(i, "\ufffd")
             if skip_special and token in self.SPECIAL_TOKENS.values():
                 continue
-            if isinstance(token, bytes):
-                tokens.append(token.decode("utf-8", errors="replace"))
+            tokens.append(token)
+        result = "".join(tokens)
+        byte_seq = bytearray()
+        for c in result:
+            b = self.byte_decoder.get(c)
+            if b is not None:
+                byte_seq.append(b)
             else:
-                tokens.append(token)
-        return "".join(tokens)
+                byte_seq.extend(c.encode("utf-8"))
+        return byte_seq.decode("utf-8", errors="replace")
 
     def save(self, path: str):
         with open(path, "w", encoding="utf-8") as f:
