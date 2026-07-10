@@ -22,6 +22,11 @@ class BPETokenizer(BaseTokenizer):
             if token in self.vocab:
                 self.special_ids[name] = self.vocab[token]
 
+    def __len__(self) -> int:
+        if self.inv_vocab:
+            return max(self.inv_vocab.keys()) + 1
+        return len(self.vocab)
+
     def _build_vocab(self, texts: List[str], min_freq: int = 2, max_vocab_size: int = 8000):
         token_freqs = Counter()
         for text in texts:
