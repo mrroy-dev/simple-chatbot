@@ -1,7 +1,6 @@
 import math
 import torch
 from torch.optim.lr_scheduler import LRScheduler
-from typing import Optional
 from simple_gpt.config import SchedulerConfig
 
 

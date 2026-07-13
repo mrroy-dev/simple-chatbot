@@ -1,6 +1,5 @@
 import re
 from typing import List, Dict, Any, Callable, Optional
-from collections import Counter
 
 
 class DataFilter:

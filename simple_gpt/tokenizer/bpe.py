@@ -23,8 +23,6 @@ class BPETokenizer(BaseTokenizer):
                 self.special_ids[name] = self.vocab[token]
 
     def __len__(self) -> int:
-        if self.inv_vocab:
-            return max(self.inv_vocab.keys()) + 1
         return len(self.vocab)
 
     def _build_vocab(self, texts: List[str], min_freq: int = 2, max_vocab_size: int = 8000):
@@ -41,13 +39,20 @@ class BPETokenizer(BaseTokenizer):
         vocab = {i: bytes([i]) for i in range(256)}
         for i, t in enumerate(self.SPECIAL_TOKENS.values()):
             vocab[256 + i] = t
+        token_to_id = {}
+
+        def _bytes_to_str(b: bytes) -> str:
+            return "".join(self.byte_encoder[x] for x in b)
+
+        for token_id, token_bytes in vocab.items():
+            if isinstance(token_bytes, bytes):
+                token_to_id[_bytes_to_str(token_bytes)] = token_id
+            else:
+                token_to_id[token_bytes] = token_id
 
         tokens = {k: list(k) for k in token_freqs}
         num_merges = max_vocab_size - len(vocab)
         merges = {}
-
-        def _bytes_to_str(b: bytes) -> str:
-            return "".join(self.byte_encoder[x] for x in b)
 
         for i in range(num_merges):
             pair_counts = defaultdict(int)
@@ -62,14 +67,17 @@ class BPETokenizer(BaseTokenizer):
             if not pair_counts:
                 break
             most_common = max(pair_counts, key=pair_counts.get)
-            merges[most_common] = len(vocab)
-            new_id = len(vocab)
-
             left = vocab[most_common[0]]
             right = vocab[most_common[1]]
             left_str = _bytes_to_str(left) if isinstance(left, bytes) else left
             right_str = _bytes_to_str(right) if isinstance(right, bytes) else right
-            vocab[new_id] = left_str + right_str
+            merged_token = left_str + right_str
+            new_id = token_to_id.get(merged_token)
+            if new_id is None:
+                new_id = len(vocab)
+                vocab[new_id] = merged_token
+                token_to_id[merged_token] = new_id
+            merges[most_common] = new_id
 
             for word in list(tokens.keys()):
                 token_list = tokens[word]
@@ -84,12 +92,7 @@ class BPETokenizer(BaseTokenizer):
                 tokens[word] = token_list
 
         self.merges = merges
-        self.vocab = {}
-        for token_id, token_bytes in vocab.items():
-            if isinstance(token_bytes, bytes):
-                self.vocab[_bytes_to_str(token_bytes)] = token_id
-            else:
-                self.vocab[token_bytes] = token_id
+        self.vocab = token_to_id
         self.inv_vocab = {v: k for k, v in self.vocab.items()}
         for name, token in self.SPECIAL_TOKENS.items():
             if token in self.vocab:
@@ -120,7 +123,15 @@ class BPETokenizer(BaseTokenizer):
 
     def encode(self, text: str) -> List[int]:
         unk = self.unk_id()
-        ids = self._bpe_encode(text)
+        special_tokens = sorted(self.SPECIAL_TOKENS.values(), key=len, reverse=True)
+        pattern = "(" + "|".join(re.escape(t) for t in special_tokens) + ")"
+        parts = re.split(pattern, text)
+        ids = []
+        for part in parts:
+            if part in self.SPECIAL_TOKENS.values() and part in self.vocab:
+                ids.append(self.vocab[part])
+            elif part:
+                ids.extend(self._bpe_encode(part))
         return [i if i in self.inv_vocab else unk for i in ids]
 
     def decode(self, ids: List[int], skip_special: bool = True) -> str:
@@ -154,7 +165,10 @@ class BPETokenizer(BaseTokenizer):
             data = json.load(f)
         tok = cls()
         tok.vocab = data["vocab"]
-        tok.merges = {tuple(k.split(",")): v for k, v in data.get("merges", {}).items()}
+        tok.merges = {
+            tuple(int(part) for part in k.split(",")): v
+            for k, v in data.get("merges", {}).items()
+        }
         tok.special_ids = data.get("special_ids", {})
         tok.inv_vocab = {v: k for k, v in tok.vocab.items()}
         return tok

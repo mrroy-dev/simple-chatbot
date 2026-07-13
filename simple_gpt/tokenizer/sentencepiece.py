@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict
+from typing import List, Optional
 from simple_gpt.tokenizer.tokenizer import BaseTokenizer
 
 

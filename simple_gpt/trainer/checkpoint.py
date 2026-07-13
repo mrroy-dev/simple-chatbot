@@ -1,11 +1,9 @@
 import os
-import re
-import json
 import torch
 import glob
-from typing import Optional, Dict, Any
+from typing import Optional, Any
 from pathlib import Path
-from simple_gpt.config import CheckpointConfig, Config
+from simple_gpt.config import CheckpointConfig
 
 
 class CheckpointManager:
@@ -56,15 +54,15 @@ class CheckpointManager:
             "config": config.to_dict(),
             "model_config": config.model,
             "train_config": config.train,
-            "tokenizer_vocab": tokenizer.vocab if hasattr(tokenizer, "vocab") else None,
-            "tokenizer_special_ids": tokenizer.special_ids if hasattr(tokenizer, "special_ids") else None,
+            "tokenizer": tokenizer,
             "git_version": git_version,
             "metrics": metrics or {},
         }
 
         path = self._checkpoint_path(tag) if tag else self._latest_path()
         torch.save(state, path)
-        torch.save(state, self._latest_path())
+        if tag:
+            torch.save(state, self._latest_path())
 
         if is_best:
             torch.save(state, self._best_path())

@@ -46,20 +46,26 @@ def main():
 
     from simple_gpt.tokenizer.word import WordTokenizer
     from simple_gpt.tokenizer.bpe import BPETokenizer
-    tok_vocab = ckpt.get("tokenizer_vocab") or ckpt.get("vocab")
-    if tok_vocab:
-        has_bpe_merges = any(isinstance(k, str) and "," in k for k in (ckpt.get("merges") or {}).keys())
-        tok_cls = BPETokenizer if has_bpe_merges else WordTokenizer
-        tok = tok_cls()
-        tok._load_vocab(tok_vocab)
-        if hasattr(tok, "merges") and "merges" in ckpt:
-            tok.merges = {tuple(k.split(",")): v for k, v in ckpt["merges"].items()}
-        tok.special_ids = ckpt.get("tokenizer_special_ids", {})
-        print(f"Restored tokenizer from checkpoint, vocab size: {len(tok)}")
-    elif args.tokenizer and os.path.exists(args.tokenizer):
-        tok = WordTokenizer.load(args.tokenizer)
-        print(f"Loaded tokenizer from {args.tokenizer}, vocab size: {len(tok)}")
+    tok = None
+    if "tokenizer" in ckpt and hasattr(ckpt["tokenizer"], "vocab"):
+        tok = ckpt["tokenizer"]
+        print(f"Restored tokenizer object from checkpoint, vocab size: {len(tok)}")
     else:
+        tok_vocab = ckpt.get("tokenizer_vocab") or ckpt.get("vocab")
+        if tok_vocab:
+            has_bpe_merges = any(isinstance(k, str) and "," in k for k in (ckpt.get("merges") or {}).keys())
+            tok_cls = BPETokenizer if has_bpe_merges else WordTokenizer
+            tok = tok_cls()
+            tok._load_vocab(tok_vocab)
+            if hasattr(tok, "merges") and "merges" in ckpt:
+                tok.merges = {tuple(int(p) for p in k.split(",")): v for k, v in ckpt["merges"].items()}
+            tok.special_ids = ckpt.get("tokenizer_special_ids", {})
+            print(f"Restored tokenizer from checkpoint, vocab size: {len(tok)}")
+        elif args.tokenizer and os.path.exists(args.tokenizer):
+            tok = WordTokenizer.load(args.tokenizer)
+            print(f"Loaded tokenizer from {args.tokenizer}, vocab size: {len(tok)}")
+
+    if tok is None:
         print("No tokenizer found in checkpoint or path.")
         return
 

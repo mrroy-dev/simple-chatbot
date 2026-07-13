@@ -49,7 +49,16 @@ class WordTokenizer(BaseTokenizer):
 
     def encode(self, text: str) -> List[int]:
         unk = self.unk_id()
-        return [self.vocab.get(t, unk) for t in tokenize(text)]
+        special_tokens = sorted(self.SPECIAL_TOKENS.values(), key=len, reverse=True)
+        pattern = "(" + "|".join(re.escape(t) for t in special_tokens) + ")"
+        parts = re.split(pattern, text)
+        ids = []
+        for part in parts:
+            if part in self.SPECIAL_TOKENS.values() and part in self.vocab:
+                ids.append(self.vocab[part])
+            elif part:
+                ids.extend(self.vocab.get(t, unk) for t in tokenize(part))
+        return ids
 
     def decode(self, ids: List[int], skip_special: bool = True) -> str:
         tokens = []

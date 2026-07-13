@@ -1,7 +1,6 @@
 /.codeatlas
 /.pytest_cache
 /.venv
-/data
 /tests
 
 # Jupyter
@@ -19,6 +18,19 @@ build/
 checkpoints/
 *.pt
 *.pth
+checkpoint_*.pt
+checkpoint_best.pt
+checkpoint_final.pt
+checkpoint_latest.pt
+
+# Generated data
+data/processed/
+data/raw/
+
+# Training artifacts
+runs/
+training_curves.png
+audit.md
 
 # IDE
 .vscode/

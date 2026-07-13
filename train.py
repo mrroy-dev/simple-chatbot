@@ -4,7 +4,6 @@ import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from simple_gpt.config import Config
 from simple_gpt.utils.config import load_config
 from simple_gpt.utils.seed import set_seed
 from simple_gpt.utils.logger import setup_logger
@@ -13,7 +12,6 @@ from simple_gpt.tokenizer.bpe import BPETokenizer
 from simple_gpt.models.model import SimpleGPT
 from simple_gpt.datasets.dataset import ConversationDataset
 from simple_gpt.datasets.conversation_builder import ConversationBuilder
-from simple_gpt.datasets.preprocess import Preprocessor
 from simple_gpt.trainer.trainer import Trainer
 
 logger = setup_logger(__name__)

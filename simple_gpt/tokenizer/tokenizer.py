@@ -1,6 +1,6 @@
 import abc
 import json
-from typing import List, Optional, Dict, Tuple, Any
+from typing import List, Optional, Dict, Any
 
 
 class BaseTokenizer(abc.ABC):

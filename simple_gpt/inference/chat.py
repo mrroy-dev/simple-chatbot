@@ -36,39 +36,36 @@ class ChatSession:
         self.history = []
         self.generator.reset_kv_cache()
 
-    def build_prompt(self) -> str:
-        parts = []
-        parts.append(self.tokenizer.SPECIAL_TOKENS["bos"])
+    def build_prompt_ids(self) -> List[int]:
+        ids = [self.tokenizer.bos_id()]
         if self.system_prompt:
-            parts.append(self.tokenizer.SPECIAL_TOKENS["system"])
-            parts.append(self.system_prompt)
+            ids.append(self.tokenizer.system_id())
+            ids.extend(self.tokenizer.encode(self.system_prompt))
         window = self.history[-self.memory_window * 2:] if self.memory_window else self.history
         for msg in window:
             role = msg["role"]
             content = msg["content"]
             if role == "user":
-                parts.append(self.tokenizer.SPECIAL_TOKENS["user"])
-                parts.append(content)
+                ids.append(self.tokenizer.user_id())
+                ids.extend(self.tokenizer.encode(content))
             elif role in ("bot", "assistant"):
-                parts.append(self.tokenizer.SPECIAL_TOKENS["bot"])
-                parts.append(content)
-        parts.append(self.tokenizer.SPECIAL_TOKENS["user"])
-        return " ".join(parts)
+                ids.append(self.tokenizer.bot_id())
+                ids.extend(self.tokenizer.encode(content))
+        ids.append(self.tokenizer.bot_id())
+        return ids
 
     def chat(self, user_input: str) -> str:
         self.add_message("user", user_input)
-        prompt = self.build_prompt()
+        input_ids = self.build_prompt_ids()
 
         result = self.generator.generate(
-            prompt=prompt,
+            input_ids=input_ids,
             max_new_tokens=self.max_new_tokens,
             temperature=self.temperature,
             top_k=self.top_k,
             top_p=self.top_p,
             repetition_penalty=self.repetition_penalty,
             eos_token_id=self.tokenizer.eos_id(),
-            add_bos=False,
-            add_user_bot=False,
             stream=self.stream,
         )
 

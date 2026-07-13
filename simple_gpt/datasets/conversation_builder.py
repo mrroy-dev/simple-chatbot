@@ -1,6 +1,5 @@
 import json
-from typing import List, Dict, Any, Optional, Iterator
-from pathlib import Path
+from typing import List, Dict, Any
 
 
 class ConversationBuilder:
@@ -109,21 +108,11 @@ class ConversationBuilder:
             conversations.append({"conversation": conv})
         return conversations
 
-    def format_conversation(self, conversation: List[Dict[str, str]], add_bos: bool = True) -> str:
+    def format_conversation(self, conversation: List[Dict[str, str]]) -> str:
         parts = []
-        if add_bos:
-            parts.append(self.SPECIAL_TOKENS["bos"])
         for turn in conversation:
-            role = turn.get("role", "user")
             content = turn.get("content", "")
-            if role == "system":
-                parts.append(f"{self.SPECIAL_TOKENS['system']} {content}")
-            elif role == "user":
-                parts.append(f"{self.SPECIAL_TOKENS['user']} {content}")
-            elif role == "bot":
-                parts.append(f"{self.SPECIAL_TOKENS['bot']} {content}")
-            elif role == "tool":
-                parts.append(f"{self.SPECIAL_TOKENS['tool']} {content}")
+            parts.append(content)
         return " ".join(parts)
 
     def build_multi_turn_examples(
@@ -146,7 +135,7 @@ class ConversationBuilder:
                 if target_turn.get("role") not in ("bot", "assistant"):
                     continue
                 examples.append({
-                    "context": self.format_conversation(context_turns, add_bos=True),
+                    "context": self.format_conversation(context_turns),
                     "response": target_turn.get("content", ""),
                     "metadata": {k: v for k, v in item.items() if k != "conversation"},
                 })

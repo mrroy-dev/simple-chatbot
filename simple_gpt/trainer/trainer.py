@@ -1,17 +1,15 @@
-import os
 import time
-import math
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
-from typing import Optional, Dict, Any, Callable
-from simple_gpt.config import Config, TrainConfig
+from torch.utils.data import DataLoader
+from typing import Optional, Any
+from simple_gpt.config import Config
 from simple_gpt.trainer.optimizer import configure_optimizer
 from simple_gpt.trainer.scheduler import get_scheduler
 from simple_gpt.trainer.checkpoint import CheckpointManager
 from simple_gpt.trainer.evaluator import Evaluator
 from simple_gpt.utils.logger import setup_logger, MetricsLogger
-from simple_gpt.utils.metrics import throughput, perplexity
+from simple_gpt.utils.metrics import throughput
 
 logger = setup_logger(__name__)
 
@@ -84,6 +82,37 @@ class Trainer:
                 self.metrics_logger.load_state_dict(ckpt["metrics_logger"])
             logger.info(f"Resumed from checkpoint: epoch={ckpt.get('epoch', 0)}, step={self.global_step}")
 
+    def _log_dataset_diagnostics(self, train_dataset, val_dataset):
+        if self.tokenizer is None:
+            return
+        contexts = []
+        responses = []
+        for ds, name in [(train_dataset, "train"), (val_dataset, "val")]:
+            if ds is None:
+                continue
+            for i in range(min(len(ds), 5000)):
+                ids, mask = ds.examples[i]
+                resp_start = next((j for j, m in enumerate(mask) if m == 1), len(ids))
+                ctx = ids[:resp_start]
+                resp = [t for t, m in zip(ids[resp_start:], mask[resp_start:]) if m == 1]
+                contexts.append(len(ctx))
+                responses.append(len(resp))
+
+        avg_ctx = sum(contexts) / max(len(contexts), 1)
+        avg_resp = sum(responses) / max(len(responses), 1)
+        max_len = max(contexts + responses) if contexts + responses else 0
+        min_len = min(contexts + responses) if contexts + responses else 0
+
+        self.logger.info(
+            f"Dataset diagnostics | "
+            f"Train: {len(train_dataset)} | "
+            f"Val: {len(val_dataset) if val_dataset else 0} | "
+            f"Avg ctx: {avg_ctx:.1f} tokens | "
+            f"Avg resp: {avg_resp:.1f} tokens | "
+            f"Max seq: {max_len} | "
+            f"Min seq: {min_len}"
+        )
+
     def _build_scheduler(self, total_steps: int):
         self.scheduler = get_scheduler(
             self.optimizer,
@@ -96,12 +125,14 @@ class Trainer:
             return self.scheduler.get_last_lr()[0]
         return self.train_cfg.optimizer.lr
 
-    def train_step(self, x, y, m):
+    def train_step(self, x, y, m, accum_steps=1):
         if self.amp_dtype is not None:
             with torch.cuda.amp.autocast(dtype=self.amp_dtype):
                 logits, loss, _ = self.model(x, targets=y, loss_mask=m)
         else:
             logits, loss, _ = self.model(x, targets=y, loss_mask=m)
+
+        loss = loss / accum_steps
 
         if self.scaler:
             self.scaler.scale(loss).backward()
@@ -124,8 +155,7 @@ class Trainer:
             x, y, m, attn = batch
             x, y, m = x.to(self.device), y.to(self.device), m.to(self.device)
 
-            loss = self.train_step(x, y, m)
-            loss = loss / accum_steps
+            loss = self.train_step(x, y, m, accum_steps)
             total_loss += loss.item() * accum_steps
             total_tokens += m.sum().item()
 
@@ -254,6 +284,8 @@ class Trainer:
                 num_workers=self.train_cfg.num_workers,
                 pin_memory=self.train_cfg.pin_memory,
             )
+
+        self._log_dataset_diagnostics(train_dataset, val_dataset)
 
         total_steps = len(train_loader) * self.train_cfg.epochs
         if self.train_cfg.max_steps:

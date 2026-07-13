@@ -19,7 +19,8 @@ class Generator:
     @torch.no_grad()
     def generate(
         self,
-        prompt: str,
+        prompt: Optional[str] = None,
+        input_ids: Optional[List[int]] = None,
         max_new_tokens: int = 100,
         temperature: float = 0.8,
         top_k: Optional[int] = 40,
@@ -31,14 +32,18 @@ class Generator:
         add_user_bot: bool = True,
         stream: bool = False,
     ) -> str:
-        input_ids = self.tokenizer.encode(prompt)
-        if add_bos:
-            input_ids = [self.tokenizer.bos_id()] + input_ids
-        if add_user_bot:
-            input_ids = input_ids + [self.tokenizer.bot_id()]
+        if input_ids is not None:
+            ids = list(input_ids)
+        elif prompt is not None:
+            ids = self.tokenizer.encode(prompt)
+            if add_bos:
+                ids = [self.tokenizer.bos_id()] + ids
+            if add_user_bot:
+                ids = ids + [self.tokenizer.bot_id()]
+        else:
+            raise ValueError("Either prompt or input_ids must be provided")
 
-        idx = torch.tensor([input_ids], dtype=torch.long, device=self.device)
-        yield_idx = idx
+        idx = torch.tensor([ids], dtype=torch.long, device=self.device)
 
         if stream:
             return self._stream_generate(
@@ -47,11 +52,13 @@ class Generator:
             )
 
         self.kv_caches = [None] * self.model.config.n_layer
+        prompt_len = idx.size(1)
 
         for _ in range(max_new_tokens):
             if idx.size(1) > self.model.config.block_size:
                 idx = idx[:, -self.model.config.block_size:]
                 self.kv_caches = [None] * self.model.config.n_layer
+                prompt_len = idx.size(1)
 
             logits, _, new_kv = self.model(
                 idx[:, -1:] if self.kv_caches[0] is not None else idx,
@@ -77,21 +84,23 @@ class Generator:
             if stop_tokens is not None and next_id.item() in stop_tokens:
                 break
 
-        generated_ids = idx[0, len(yield_idx):].tolist()
+        generated_ids = idx[0, prompt_len:].tolist()
         if eos_token_id is not None and eos_token_id in generated_ids:
             generated_ids = generated_ids[:generated_ids.index(eos_token_id)]
 
-        return self.tokenizer.decode(generated_ids)
+        return self.tokenizer.decode(generated_ids, skip_special=True)
 
     def _stream_generate(self, idx, max_new_tokens, temperature, top_k, top_p,
                           repetition_penalty, eos_token_id, stop_tokens):
         self.kv_caches = [None] * self.model.config.n_layer
+        prompt_len = idx.size(1)
         generated_ids = []
 
         for _ in range(max_new_tokens):
             if idx.size(1) > self.model.config.block_size:
                 idx = idx[:, -self.model.config.block_size:]
                 self.kv_caches = [None] * self.model.config.n_layer
+                prompt_len = idx.size(1)
 
             logits, _, new_kv = self.model(
                 idx[:, -1:] if self.kv_caches[0] is not None else idx,
@@ -108,7 +117,7 @@ class Generator:
             idx = torch.cat([idx, next_id], dim=1)
             generated_ids.append(next_id.item())
 
-            yield self.tokenizer.decode(generated_ids)
+            yield self.tokenizer.decode(generated_ids, skip_special=True)
 
             if eos_token_id is not None and next_id.item() == eos_token_id:
                 break

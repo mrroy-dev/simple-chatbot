@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, List, Tuple
+from typing import Optional, List
 from simple_gpt.models.embeddings import GPTEmbeddings
 from simple_gpt.models.transformer import TransformerBlock, RMSNorm
 from simple_gpt.config import ModelConfig
@@ -189,7 +189,7 @@ class SimpleGPT(nn.Module):
     @classmethod
     def from_pretrained(cls, checkpoint_path: str, device: str = "cpu"):
         import torch
-        ckpt = torch.load(checkpoint_path, map_location=device)
+        ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
         cfg = ckpt.get("model_config") or ModelConfig(**ckpt["config"])
         if isinstance(cfg, dict):
             cfg = ModelConfig(**cfg)

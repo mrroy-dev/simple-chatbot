@@ -1,5 +1,5 @@
 import math
-from typing import List, Optional, Sequence
+from typing import List
 
 
 def perplexity(loss: float) -> float:

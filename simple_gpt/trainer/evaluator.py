@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from typing import Optional, List
+from typing import Optional
 from simple_gpt.utils.metrics import perplexity, token_accuracy
 
 
@@ -12,6 +12,7 @@ class Evaluator:
 
     @torch.no_grad()
     def evaluate(self, dataloader: DataLoader, max_batches: Optional[int] = None) -> dict:
+        was_training = self.model.training
         self.model.eval()
         total_loss = 0.0
         total_acc = 0.0
@@ -25,15 +26,19 @@ class Evaluator:
             x, y, m = x.to(self.device), y.to(self.device), m.to(self.device)
 
             logits, loss, _ = self.model(x, targets=y, loss_mask=m)
-            total_loss += loss.item()
+            target_tokens = m.sum().item()
+            if target_tokens <= 0:
+                continue
+            total_loss += loss.item() * target_tokens
             total_acc += token_accuracy(logits, y, m)
-            total_tokens += m.sum().item()
+            total_tokens += target_tokens
             n_batches += 1
 
-        avg_loss = total_loss / max(n_batches, 1)
+        avg_loss = total_loss / max(total_tokens, 1)
         avg_acc = total_acc / max(n_batches, 1)
 
-        self.model.train()
+        if was_training:
+            self.model.train()
         return {
             "val_loss": avg_loss,
             "val_perplexity": perplexity(avg_loss),

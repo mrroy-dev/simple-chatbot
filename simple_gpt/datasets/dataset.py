@@ -1,7 +1,75 @@
 import json
 import torch
 from torch.utils.data import Dataset, DataLoader, IterableDataset
-from typing import List, Dict, Any, Optional, Iterator
+from typing import List, Dict, Any, Optional, Iterator, Tuple
+
+
+def _build_supervised_example(
+    item: Dict[str, Any],
+    tokenizer,
+    seq_len: int,
+    add_bos: bool,
+    add_eos: bool,
+) -> Optional[Tuple[list, list]]:
+    ctx = item.get("context", "")
+    resp = item.get("response", "")
+    ctx_ids = tokenizer.encode(ctx)
+    resp_ids = tokenizer.encode(resp)
+
+    if not resp_ids:
+        return None
+
+    bos = tokenizer.bos_id()
+    eos = tokenizer.eos_id()
+    user_t = tokenizer.user_id()
+    bot_t = tokenizer.bot_id()
+    pad = tokenizer.pad_id()
+
+    prefix = []
+    if add_bos:
+        prefix.append(bos)
+    prefix.append(user_t)
+    prefix.extend(ctx_ids)
+    prefix.append(bot_t)
+
+    fixed_prefix_len = (1 if add_bos else 0) + 2
+    eos_len = 1 if add_eos else 0
+    response_budget = seq_len - fixed_prefix_len - eos_len
+    if response_budget <= 0:
+        return None
+
+    if len(resp_ids) > response_budget:
+        resp_ids = resp_ids[:response_budget]
+
+    ctx_budget = seq_len - fixed_prefix_len - len(resp_ids) - eos_len
+    if ctx_budget < 0:
+        return None
+    if len(ctx_ids) > ctx_budget:
+        # Keep the most recent prompt tokens and always leave supervised response tokens visible.
+        ctx_ids = ctx_ids[-ctx_budget:] if ctx_budget > 0 else []
+
+    ids = []
+    if add_bos:
+        ids.append(bos)
+    ids.append(user_t)
+    ids.extend(ctx_ids)
+    ids.append(bot_t)
+    resp_start = len(ids)
+    ids.extend(resp_ids)
+    if add_eos:
+        ids.append(eos)
+
+    loss_mask = [0] * resp_start + [1] * (len(ids) - resp_start)
+    pad_len = seq_len - len(ids)
+    if pad_len < 0:
+        return None
+
+    input_ids = ids + [pad] * pad_len
+    mask = loss_mask + [0] * pad_len
+
+    if sum(mask[1:]) == 0:
+        return None
+    return input_ids, mask
 
 
 class ConversationDataset(Dataset):
@@ -14,41 +82,13 @@ class ConversationDataset(Dataset):
         add_eos: bool = True,
     ):
         self.examples = []
-        bos = tokenizer.bos_id()
-        eos = tokenizer.eos_id()
-        user_t = tokenizer.user_id()
-        bot_t = tokenizer.bot_id()
         pad = tokenizer.pad_id()
+        self.pad_id = pad
 
         for item in data:
-            ctx = item.get("context", "")
-            resp = item.get("response", "")
-            ctx_ids = tokenizer.encode(ctx)
-            resp_ids = tokenizer.encode(resp)
-
-            ids = []
-            if add_bos:
-                ids.append(bos)
-            ids.append(user_t)
-            ids.extend(ctx_ids)
-            ids.append(bot_t)
-            ids.extend(resp_ids)
-            if add_eos:
-                ids.append(eos)
-
-            if len(ids) > seq_len:
-                ids = ids[:seq_len]
-
-            resp_start = len(ctx_ids) + 2 + (1 if add_bos else 0)
-            loss_mask = [0] * len(ids)
-            for i in range(min(resp_start, len(ids)), len(ids)):
-                loss_mask[i] = 1
-
-            pad_len = seq_len - len(ids)
-            input_ids = ids + [pad] * pad_len
-            mask = loss_mask + [0] * pad_len
-
-            self.examples.append((input_ids, mask))
+            example = _build_supervised_example(item, tokenizer, seq_len, add_bos, add_eos)
+            if example is not None:
+                self.examples.append(example)
 
     def __len__(self):
         return len(self.examples)
@@ -58,7 +98,7 @@ class ConversationDataset(Dataset):
         x = torch.tensor(ids[:-1], dtype=torch.long)
         y = torch.tensor(ids[1:], dtype=torch.long)
         m = torch.tensor(mask[1:], dtype=torch.long)
-        attn = torch.tensor([1 if t != 0 else 0 for t in ids[:-1]], dtype=torch.long)
+        attn = torch.tensor([1 if t != self.pad_id else 0 for t in ids[:-1]], dtype=torch.long)
         return x, y, m, attn
 
 
@@ -78,10 +118,6 @@ class StreamingConversationDataset(IterableDataset):
         self.add_eos = add_eos
 
     def __iter__(self) -> Iterator:
-        bos = self.tokenizer.bos_id()
-        eos = self.tokenizer.eos_id()
-        user_t = self.tokenizer.user_id()
-        bot_t = self.tokenizer.bot_id()
         pad = self.tokenizer.pad_id()
 
         with open(self.data_path, "r", encoding="utf-8") as f:
@@ -93,37 +129,21 @@ class StreamingConversationDataset(IterableDataset):
                 except json.JSONDecodeError:
                     continue
 
-                ctx = item.get("context", "")
-                resp = item.get("response", "")
-                ctx_ids = self.tokenizer.encode(ctx)
-                resp_ids = self.tokenizer.encode(resp)
-
-                ids = []
-                if self.add_bos:
-                    ids.append(bos)
-                ids.append(user_t)
-                ids.extend(ctx_ids)
-                ids.append(bot_t)
-                ids.extend(resp_ids)
-                if self.add_eos:
-                    ids.append(eos)
-
-                if len(ids) > self.seq_len:
-                    ids = ids[:self.seq_len]
-
-                resp_start = len(ctx_ids) + 2 + (1 if self.add_bos else 0)
-                loss_mask = [0] * len(ids)
-                for i in range(min(resp_start, len(ids)), len(ids)):
-                    loss_mask[i] = 1
-
-                pad_len = self.seq_len - len(ids)
-                input_ids = ids + [pad] * pad_len
-                mask = loss_mask + [0] * pad_len
+                example = _build_supervised_example(
+                    item,
+                    self.tokenizer,
+                    self.seq_len,
+                    self.add_bos,
+                    self.add_eos,
+                )
+                if example is None:
+                    continue
+                input_ids, mask = example
 
                 x = torch.tensor(input_ids[:-1], dtype=torch.long)
                 y = torch.tensor(input_ids[1:], dtype=torch.long)
                 m = torch.tensor(mask[1:], dtype=torch.long)
-                attn = torch.tensor([1 if t != 0 else 0 for t in input_ids[:-1]], dtype=torch.long)
+                attn = torch.tensor([1 if t != pad else 0 for t in input_ids[:-1]], dtype=torch.long)
                 yield x, y, m, attn
 
 

@@ -4,7 +4,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from simple_gpt.datasets.conversation_builder import ConversationBuilder
-from simple_gpt.datasets.cleaners import TextCleaner
 from simple_gpt.datasets.filters import DataFilter
 from simple_gpt.datasets.preprocess import Preprocessor
 
